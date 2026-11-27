@@ -109,6 +109,9 @@
       ["夜勤の回数が増えます", "夜勤の回数が増えた", "夜勤を増やした", "夜勤が増えること"], ["夜勤の回数が減ります", "夜勤の回数が減った", "夜勤を減らした", "夜勤が減ること"]),
   ];
   const SC_BY = Object.fromEntries(SC.map((s) => [s.id, s]));
+  // 出す話は、はじめの36話から選ぶ（SC に足すと乱数で選ぶ数が変わり、公開した日の判定と問題が変わるため。CodeRabbit #1）。
+  // 話を足すときは、出し始める日（since）より後の日だけ広げた数で選ぶ形にする
+  const POOL = SC.slice(0, 36);
   const sideOf = (sc, v) => (v === "b" ? sc.b : sc.g);
   // 話の文（1行ずつ）。form：same＝実験と同じ形、unk＝副作用を聞いていない、aim＝副作用もねらっていた（よい副作用だけ）
   function story(sc, v, form = "same") {
@@ -126,7 +129,7 @@
   const jparse = (k) => { const m = /^([a-z0-9-]+):([bg])$/.exec(String(k)); return m && Object.prototype.hasOwnProperty.call(SC_BY, m[1]) ? { sc: SC_BY[m[1]], v: m[2] } : null; };
   // 判定の組：話を3つ選び、前半は悪い・よいをまぜて3話、後半は同じ話の反対の3話（並びを変える）。前半と後半で同じ話が続かない
   function judgeSet(R) {
-    const ids = pickN(R, SC.map((s) => s.id), 3), vs = R() < 0.5 ? ["b", "g", "b"] : ["g", "b", "g"], first = ids.map((id, i) => `${id}:${vs[i]}`);
+    const ids = pickN(R, POOL.map((s) => s.id), 3), vs = R() < 0.5 ? ["b", "g", "b"] : ["g", "b", "g"], first = ids.map((id, i) => `${id}:${vs[i]}`);
     let back = shuffle(R, ids.map((id, i) => `${id}:${vs[i] === "b" ? "g" : "b"}`));
     if (back[0].split(":")[0] === ids[2]) back = back.slice(1).concat(back[0]);
     return first.concat(back);
@@ -134,40 +137,41 @@
 
   // ---- 学べる問い（正解がある）----
   // 2段目の選び肢（GROUPS）。問題ごとに見せる組（g2）と、2段目の問い（ask2）が決まる
+  const pc = (n) => `${n}%`;
   const GROUPS = {
     fuku: { name: "副作用", sub: "ねらいではない。でも先に聞いていた" },
     nerai: { name: "ねらい", sub: "それがほしくて、した" },
     shiranu: { name: "知らなかったこと", sub: "起きると聞いていない" },
-    p82: { name: "82%", sub: "5人に4人ほど" },
-    p23: { name: "23%", sub: "4人に1人ほど" },
+    p82: { name: pc(PAPER.bad), sub: "5人に4人ほど" },
+    p23: { name: pc(PAPER.good), sub: "4人に1人ほど" },
     p50: { name: "50%", sub: "半分ほど" },
     blame: { name: "悪いことは責めたくなる", sub: "責める気持ちが答えを動かす、という説" },
     aim: { name: "悪いほうがねらいだった", sub: "本当はそれがほしかった" },
     know: { name: "よいほうは知らなかった", sub: "副作用を聞いていなかった" },
-    s48: { name: "4.8", sub: "強く責めた" },
-    s14: { name: "1.4", sub: "あまりほめなかった" },
+    s48: { name: PAPER.blame, sub: "強く責めた" },
+    s14: { name: PAPER.praise, sub: "あまりほめなかった" },
     s30: { name: "3.0", sub: "まん中ほど" },
-    tell: { name: "副作用を先に伝える", sub: "知っていた形にする" },
+    tell: { name: "副作用を先に伝える", sub: "知っていて「どうでもいい」と言う形にする" },
     care: { name: "「どうでもいい」と言う", sub: "ねらいではない形にする" },
     none: { name: "変えなくてよい", sub: "もう同じ形" },
     koen: { name: "公園", sub: "ニューヨークの公園にいた人" },
     univ: { name: "大学の教室", sub: "授業に出ていた学生" },
     net: { name: "インターネット", sub: "画面で答えた人" },
-    r70: { name: "およそ7割", sub: "40本のうち、7割ほど" },
-    r30: { name: "およそ3割", sub: "40本のうち、3割ほど" },
-    r100: { name: "全部", sub: "40本のすべて" },
-    e30: { name: "30%", sub: "10人に3人ほど" },
-    e77: { name: "77%", sub: "4人に3人ほど" },
+    r70: { name: "およそ7割", sub: `${PAPER.rep}本のうち、7割ほど` },
+    r30: { name: "およそ3割", sub: `${PAPER.rep}本のうち、3割ほど` },
+    r100: { name: "全部", sub: `${PAPER.rep}本のすべて` },
+    e30: { name: pc(PAPER.good2), sub: "10人に3人ほど" },
+    e77: { name: pc(PAPER.bad2), sub: "4人に3人ほど" },
     e50: { name: "50%", sub: "半分ほど" },
   };
-  const pc = (n) => `${n}%`;
   const P_OPTS = [pc(PAPER.bad), pc(PAPER.good), "50%"];
-  const scOf = (R) => SC[ri(R, 0, SC.length - 1)];
+  const scOf = (R) => POOL[ri(R, 0, POOL.length - 1)];
   // 話を見せる問い：q は話の4行
   const withStory = (sc, v, form) => ({ lines: story(sc, v, form), q: story(sc, v, form).join(""), mk: sc.mk, media: `${sc.pl}の話`, scid: sc.id, val: v });
 
   const K = (id, lv, src, name, look, key, why, make) => ({ id, lv, src: [src], name, look, key, why, make });
-  const KEY_KNOBE = "悪い副作用の話では82%、よい副作用の話では23%が「わざと」と答えた（Knobe 2003）。";
+  const KEY_KNOBE = `悪い副作用の話では${PAPER.bad}%、よい副作用の話では${PAPER.good}%が「わざと」と答えた（Knobe 2003）。`;
+  const KEY_SEME = `責める強さの平均は${PAPER.blame}、ほめる強さの平均は${PAPER.praise}（0〜6。2つの実験を合わせて）。`;
   const KINDS = [
     K("nerai", 0, "knobe", "ねらいと副作用", "その人が「〜たい」と言ったことは？", "本人が「〜したい」と言ったのがねらい。先に聞いていたが、ねらいでない結果が副作用。",
       "ねらいは本人がほしかったこと。先に聞いていたのに、ねらいではない結果を「副作用」と呼びます（Knobe 2003 の話の形）。",
@@ -176,15 +180,15 @@
           grp: "fuku", g2: ["fuku", "nerai", "shiranu"], ask2: `では、「${sd[1]}」のは？`,
           gwhy: `${sc.who}は「${sc.t}のことは、どうでもいい」と言いました。先に聞いていたが、ねらいではないので副作用です。` }; }),
     K("p-bad", 0, "knobe", "悪い副作用で「わざと」", "悪い話とよい話、「わざと」が多かったのは悪い話。", KEY_KNOBE,
-      "Knobe（2003）の1つ目の実験。環境をそこなう話では82%が「わざと」と答えました。",
+      `Knobe（2003）の1つ目の実験。環境をそこなう話では${PAPER.bad}%が「わざと」と答えました。`,
       (R) => { const sc = scOf(R);
         return { ...withStory(sc, "b"), ask: "この形の悪い話。実験で「わざと」と答えたのは？", opts: shuffle(R, P_OPTS), ans: pc(PAPER.bad),
-          grp: "p23", g2: ["p82", "p23", "p50"], ask2: "では、よい副作用の話では？", gwhy: "環境を助ける話では、「わざと」は23%でした。のこりの77%は「わざとじゃない」。" }; }),
+          grp: "p23", g2: ["p82", "p23", "p50"], ask2: "では、よい副作用の話では？", gwhy: `環境を助ける話では、「わざと」は${PAPER.good}%でした。のこりの${100 - PAPER.good}%は「わざとじゃない」。` }; }),
     K("p-good", 0, "knobe", "よい副作用で「わざと」", "よい話では「わざと」は少なかった。", KEY_KNOBE,
-      "Knobe（2003）の1つ目の実験。環境を助ける話では「わざと」は23%。77%が「わざとじゃない」と答えました。",
+      `Knobe（2003）の1つ目の実験。環境を助ける話では「わざと」は${PAPER.good}%。${100 - PAPER.good}%が「わざとじゃない」と答えました。`,
       (R) => { const sc = scOf(R);
         return { ...withStory(sc, "g"), ask: "この形のよい話。実験で「わざと」と答えたのは？", opts: shuffle(R, P_OPTS), ans: pc(PAPER.good),
-          grp: "p82", g2: ["p82", "p23", "p50"], ask2: "では、悪い副作用の話では？", gwhy: "環境をそこなう話では、「わざと」は82%でした。同じ形でも、よし悪しで答えが分かれました。" }; }),
+          grp: "p82", g2: ["p82", "p23", "p50"], ask2: "では、悪い副作用の話では？", gwhy: `環境をそこなう話では、「わざと」は${PAPER.bad}%でした。同じ形でも、よし悪しで答えが分かれました。` }; }),
     K("dotchi", 1, "knobe", "どちらで「わざと」が多い？", "ちがうのは、副作用がよいか悪いかだけ。", KEY_KNOBE,
       "同じ形の話でも、悪い副作用のほうが「わざと」と言われやすい。これをノーブ効果（副作用効果）と呼びます（Knobe 2003）。",
       (R) => { const sc = scOf(R), ob = `「${sc.b[1]}」話`, og = `「${sc.g[1]}」話`, two = shuffle(R, [sc.b[1], sc.g[1]]);
@@ -193,16 +197,16 @@
           opts: shuffle(R, [ob, og, "どちらも同じくらい"]), ans: ob,
           grp: "blame", g2: ["blame", "aim", "know"], ask2: "Knobe は、なぜ分かれたと考えた？",
           gwhy: "どちらも先に聞いていて、ねらいではない。ちがうのはよし悪しだけ。Knobe は、悪いことを責めたくなる気持ちが関わると考えました。" }; }),
-    K("seme", 1, "knobe", "責める強さ", "悪い話では、強く責める人が多かった。", "責める強さの平均は4.8、ほめる強さの平均は1.4（0〜6。2つの実験を合わせて）。",
-      "悪い副作用の話で、責める強さ（0〜6）の平均は4.8でした（Knobe 2003。2つの実験を合わせた数）。",
+    K("seme", 1, "knobe", "責める強さ", "悪い話では、強く責める人が多かった。", KEY_SEME,
+      `悪い副作用の話で、責める強さ（0〜6）の平均は${PAPER.blame}でした（Knobe 2003。2つの実験を合わせた数）。`,
       (R) => { const sc = scOf(R);
         return { ...withStory(sc, "b"), ask: "実験で、責める強さ（0〜6）の平均は？", opts: shuffle(R, [PAPER.blame, PAPER.praise, "3.0"]), ans: PAPER.blame,
-          grp: "s14", g2: ["s48", "s14", "s30"], ask2: "では、よい話で、ほめる強さの平均は？", gwhy: "よい話で、ほめる強さの平均は1.4。悪いことは強く責めても、よいことはあまりほめませんでした。" }; }),
-    K("home", 1, "knobe", "ほめる強さ", "よい話では、あまりほめなかった。", "責める強さの平均は4.8、ほめる強さの平均は1.4（0〜6。2つの実験を合わせて）。",
-      "よい副作用の話で、ほめる強さ（0〜6）の平均は1.4でした（Knobe 2003。2つの実験を合わせた数）。",
+          grp: "s14", g2: ["s48", "s14", "s30"], ask2: "では、よい話で、ほめる強さの平均は？", gwhy: `よい話で、ほめる強さの平均は${PAPER.praise}。悪いことは強く責めても、よいことはあまりほめませんでした。` }; }),
+    K("home", 1, "knobe", "ほめる強さ", "よい話では、あまりほめなかった。", KEY_SEME,
+      `よい副作用の話で、ほめる強さ（0〜6）の平均は${PAPER.praise}でした（Knobe 2003。2つの実験を合わせた数）。`,
       (R) => { const sc = scOf(R);
         return { ...withStory(sc, "g"), ask: "実験で、ほめる強さ（0〜6）の平均は？", opts: shuffle(R, [PAPER.blame, PAPER.praise, "3.0"]), ans: PAPER.praise,
-          grp: "s48", g2: ["s48", "s14", "s30"], ask2: "では、悪い話で、責める強さの平均は？", gwhy: "悪い話で、責める強さの平均は4.8。よし悪しで、責める・ほめる強さに大きな差がありました。" }; }),
+          grp: "s48", g2: ["s48", "s14", "s30"], ask2: "では、悪い話で、責める強さの平均は？", gwhy: `悪い話で、責める強さの平均は${PAPER.blame}。よし悪しで、責める・ほめる強さに大きな差がありました。` }; }),
     K("kawari", 2, "knobe", "実験の形とくらべる", "副作用を先に聞いた？ 「どうでもいい」と言った？", "実験の形：ねらいを言う → 副作用を先に聞く → 「どうでもいい」と言う → 副作用が起きる。",
       "Knobe の話は「副作用を先に聞いていた」「ねらいではない」の2つがそろう形。どちらかが欠けると、別の問いになります。",
       (R) => { const sc = scOf(R), form = ["same", "unk", "aim"][ri(R, 0, 2)], v = form === "aim" ? "g" : R() < 0.5 ? "b" : "g";
@@ -210,21 +214,21 @@
         return { ...withStory(sc, v, form), ask: "Knobe の実験の話と、どこがちがう？", opts: shuffle(R, Object.values(ans)), ans: ans[form], form,
           grp: { same: "none", unk: "tell", aim: "care" }[form], g2: ["tell", "care", "none"], ask2: "実験と同じ形にするには？",
           gwhy: form === "same" ? "ねらいを言い、副作用を先に聞き、「どうでもいい」と言っています。実験と同じ形です。" : form === "unk" ? "この話では、副作用を先に聞いていません。先に伝えると、実験と同じ形になります。" : "この話では、副作用もねらっています。「どうでもいい」と言うと、実験と同じ形になります。" }; }),
-    K("ninzu", 2, "knobe", "実験の人数と場所", "2つ目の実験は42人。1つ目はそれより多い。", "1つ目の実験は、ニューヨーク・マンハッタンの公園にいた78人に聞いた。",
-      "1つ目の実験は、マンハッタンの公園にいた78人に聞きました。悪い話・よい話のどちらか一方を読んでもらいました（Knobe 2003）。",
+    K("ninzu", 2, "knobe", "実験の人数と場所", `2つ目の実験は${PAPER.n2}人。1つ目はそれより多い。`, `1つ目の実験は、ニューヨーク・マンハッタンの公園にいた${PAPER.n1}人に聞いた。`,
+      `1つ目の実験は、マンハッタンの公園にいた${PAPER.n1}人に聞きました。悪い話・よい話のどちらか一方を読んでもらいました（Knobe 2003）。`,
       (R) => ({ ...withStory(scOf(R), R() < 0.5 ? "b" : "g"),
         ask: "この形の話。1つ目の実験は何人に聞いた？", opts: shuffle(R, [`${PAPER.n1}人`, `${PAPER.n2}人`, "1000人"]), ans: `${PAPER.n1}人`,
-        grp: "koen", g2: ["koen", "univ", "net"], ask2: "では、どこで聞いた？", gwhy: "ニューヨーク・マンハッタンの公園にいた人に聞きました。2つ目の実験（42人）も公園です。" })),
-    K("yarinaoshi", 2, "cova", "やり直しの研究", "やり直した40本のうち、およそ7割は同じ結果だった。", "Knobe（2003）の結果は、やり直しの研究でも同じ向きに出た。",
-      "Cova ら（2021）は、哲学の実験40本をやり直しました。Knobe（2003）の結果も、同じ向きに出ました。",
+        grp: "koen", g2: ["koen", "univ", "net"], ask2: "では、どこで聞いた？", gwhy: `ニューヨーク・マンハッタンの公園にいた人に聞きました。2つ目の実験（${PAPER.n2}人）も公園です。` })),
+    K("yarinaoshi", 2, "cova", "やり直しの研究", `やり直した${PAPER.rep}本のうち、およそ7割は同じ結果だった。`, "Knobe（2003）の結果は、やり直しの研究でも同じ向きに出た。",
+      `Cova ら（2021）は、哲学の実験${PAPER.rep}本をやり直しました。Knobe（2003）の結果も、同じ向きに出ました。`,
       (R) => ({ ...withStory(scOf(R), R() < 0.5 ? "b" : "g"),
         ask: "この形の実験を別の人がやり直すと？", opts: shuffle(R, ["同じ向きの差が出た", "逆の向きになった", "差が出なかった"]), ans: "同じ向きの差が出た",
-        grp: "r70", g2: ["r70", "r30", "r100"], ask2: "では、40本のうち同じ結果が出たのは？", gwhy: "40本のうち、およそ7割で同じ結果が出ました（Cova ら 2021）。全部ではありません。" })),
-    K("futatsume", 2, "knobe", "2つ目の実験", "2つ目の実験でも、悪い話で「わざと」が多かった。", "2つ目の実験（42人）では、悪い話77%、よい話30%が「わざと」と答えた。",
-      "Knobe（2003）の2つ目の実験（別の話・42人）でも、悪い話77%・よい話30%と、同じ向きに分かれました。",
+        grp: "r70", g2: ["r70", "r30", "r100"], ask2: `では、${PAPER.rep}本のうち同じ結果が出たのは？`, gwhy: `${PAPER.rep}本のうち、およそ7割で同じ結果が出ました（Cova ら 2021）。全部ではありません。` })),
+    K("futatsume", 2, "knobe", "2つ目の実験", "2つ目の実験でも、悪い話で「わざと」が多かった。", `2つ目の実験（${PAPER.n2}人）では、悪い話${PAPER.bad2}%、よい話${PAPER.good2}%が「わざと」と答えた。`,
+      `Knobe（2003）の2つ目の実験（別の話・${PAPER.n2}人）でも、悪い話${PAPER.bad2}%・よい話${PAPER.good2}%と、同じ向きに分かれました。`,
       (R) => ({ ...withStory(scOf(R), "b"),
         ask: "別の話の2つ目の実験。悪い話で「わざと」は？", opts: shuffle(R, [pc(PAPER.bad2), pc(PAPER.good2), "50%"]), ans: pc(PAPER.bad2),
-        grp: "e30", g2: ["e77", "e30", "e50"], ask2: "では、よい話では？", gwhy: "よい話では30%。1つ目の実験（82%・23%）と同じ向きです。" })),
+        grp: "e30", g2: ["e77", "e30", "e50"], ask2: "では、よい話では？", gwhy: `よい話では${PAPER.good2}%。1つ目の実験（${PAPER.bad}%・${PAPER.good}%）と同じ向きです。` })),
   ];
   const BY = Object.fromEntries(KINDS.map((k) => [k.id, k]));
   const kindsOf = (lv, date) => KINDS.filter((k) => k.lv === lv && (!date || !k.since || k.since <= date)).map((k) => k.id);
